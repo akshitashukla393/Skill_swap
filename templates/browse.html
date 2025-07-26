@@ -139,7 +139,7 @@
                 <label for="offered_skill_id">What skill can you offer? *</label>
                 <select id="offered_skill_id" name="offered_skill_id" required>
                     <option value="">Select a skill you can teach</option>
-                    <!-- Will be populated by JavaScript -->
+                    
                 </select>
             </div>
             
@@ -147,7 +147,7 @@
                 <label for="requested_skill_id">What skill do you want to learn? *</label>
                 <select id="requested_skill_id" name="requested_skill_id" required>
                     <option value="">Select a skill you want to learn</option>
-                    <!-- Will be populated by JavaScript -->
+                    
                 </select>
             </div>
             
@@ -169,7 +169,7 @@
         <span class="close" onclick="closeUserProfileModal()" style="position: absolute; top: 1rem; right: 1rem; font-size: 1.5rem; cursor: pointer;">&times;</span>
         
         <div id="userProfileContent">
-            <!-- Will be populated by JavaScript -->
+            <!-- Will be filled by JavaScript -->
         </div>
     </div>
 </div>
@@ -364,7 +364,7 @@ document.getElementById('swapRequestForm').addEventListener('submit', async func
     }
 });
 
-// Generic helper for API calls
+
 async function apiRequest(url, method = 'GET', body = null) {
     const options = {
         method,
@@ -383,7 +383,7 @@ async function apiRequest(url, method = 'GET', body = null) {
 }
 
 function loadMore() {
-    // Implement load more functionality if needed
+    
     console.log('Load more clicked');
 }
 </script>

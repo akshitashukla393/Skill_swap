@@ -388,7 +388,7 @@ document.getElementById('profile_visibility').addEventListener('change', functio
     .catch(error => {
         console.error('Error:', error);
         showAlert('An error occurred while updating profile visibility', 'error');
-        this.checked = !this.checked; // Revert on error
+        this.checked = !this.checked; 
     });
 });
 
@@ -458,8 +458,7 @@ document.getElementById('editProfileForm').addEventListener('submit', function(e
     });
 });
 
-// Change password form (Note: This needs a backend route)
-// Change password form - now actually calls the backend
+
 document.getElementById('changePasswordForm').addEventListener('submit', function(e) {
     e.preventDefault();
 
