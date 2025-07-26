@@ -227,14 +227,21 @@
             </a>
             <ul class="nav-links">
                 {% if session.user_id %}
-                    <li><a href="{{ url_for('dashboard') }}"><i class="fas fa-tachometer-alt"></i> Dashboard</a></li>
-                    <li><a href="{{ url_for('browse') }}"><i class="fas fa-search"></i> Browse Skills</a></li>
-                    <li><a href="{{ url_for('profile') }}"><i class="fas fa-user"></i> Profile</a></li>
                     {% if session.is_admin %}
-                        <li><a href="{{ url_for('admin_dashboard') }}"><i class="fas fa-cog"></i> Admin</a></li>
+                        <!-- Admin View -->
+                        <li><a href="{{ url_for('admin_dashboard') }}"><i class="fas fa-cog"></i> Admin Dashboard</a></li>
+                        <li><a href="{{ url_for('profile') }}"><i class="fas fa-user"></i> Profile</a></li>
+                        <li><a href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
+                    {% else %}
+                        <!-- Regular User View -->
+                        <li><a href="{{ url_for('dashboard') }}"><i class="fas fa-tachometer-alt"></i> Dashboard</a></li>
+                        <li><a href="{{ url_for('browse') }}"><i class="fas fa-search"></i> Browse Skills</a></li>
+                        <li><a href="{{ url_for('profile') }}"><i class="fas fa-user"></i> Profile</a></li>
+                        <li><a href="{{ url_for('messages') }}"><i class="fas fa-comments"></i> Messages</a></li>
+                        <li><a href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
                     {% endif %}
-                    <li><a href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
                 {% else %}
+                    <!-- Not Logged In -->
                     <li><a href="{{ url_for('login') }}"><i class="fas fa-sign-in-alt"></i> Login</a></li>
                     <li><a href="{{ url_for('register') }}"><i class="fas fa-user-plus"></i> Register</a></li>
                 {% endif %}
@@ -259,6 +266,20 @@
     </main>
 
     <script>
+        // Highlight stars on hover
+document.querySelectorAll('.star-rating').forEach(container => {
+    const stars = container.querySelectorAll('.fa-star');
+    stars.forEach((star, index) => {
+        star.addEventListener('mouseenter', () => {
+            stars.forEach((s, i) => s.style.color = i <= index ? '#ffc107' : '#ccc');
+        });
+        container.addEventListener('mouseleave', () => {
+            stars.forEach(s => s.style.color = '#ccc');
+        });
+    });
+});
+
+
         // Utility functions
         function showAlert(message, type = 'success') {
             const alert = document.createElement('div');

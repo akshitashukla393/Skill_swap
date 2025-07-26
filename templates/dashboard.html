@@ -154,7 +154,57 @@
             </div>
         {% endif %}
     </div>
+
+    <!-- Accepted Swaps Section -->
+    <div class="card" style="margin-top: 2rem;">
+        <h2 style="color: #333; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
+            <i class="fas fa-handshake"></i> Accepted Swaps
+        </h2>
+
+        {% if accepted_swaps %}
+            <div class="requests-list">
+                {% for swap in accepted_swaps %}
+                {% if swap.status == 'accepted' %}
+                    <div style="margin-top: 1rem;">
+                        <label style="font-weight: bold;">Rate {{ swap.provider_name if swap.requester_id == session.user_id else swap.requester_name }}:</label>
+                        <div class="star-rating" data-swap-id="{{ swap.id }}" data-rated-id="{{ swap.provider_id if swap.requester_id == session.user_id else swap.requester_id }}">
+                            {% for i in range(1,6) %}
+                                <i class="fas fa-star" data-value="{{ i }}" style="color: #ccc; cursor: pointer;"></i>
+                            {% endfor %}
+                        </div>
+                        <textarea placeholder="Optional feedback" class="rating-feedback" style="margin-top: 0.5rem; width: 100%; height: 50px;"></textarea>
+                        <button class="btn btn-success submit-rating" style="margin-top: 0.5rem;">Submit Rating</button>
+                    </div>
+                {% endif %}
+
+                <div class="request-item" style="padding: 1rem; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 1rem;">
+                    <a href="{{ url_for('messages') }}" class="btn btn-secondary" style="margin-top: 0.75rem;">
+                        <i class="fas fa-comments"></i> Message Partner
+                    </a>
+
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                        <strong>{{ swap.requester_name }} ⇄ {{ swap.provider_name }}</strong>
+                        <span class="status-badge status-accepted">Accepted</span>
+                    </div>
+                    <p style="margin: 0.5rem 0; color: #666;">
+                        <strong>{{ swap.requester_name }}</strong> is offering <em>{{ swap.offered_skill }}</em> 
+                        for <em>{{ swap.requested_skill }}</em> from <strong>{{ swap.provider_name }}</strong>.
+                    </p>
+                    <small style="color: #666;">Agreed on: {{ swap.updated_at or swap.created_at }}</small>
+                </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div style="text-align: center; padding: 2rem; color: #666;">
+                <i class="fas fa-handshake" style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.5;"></i>
+                <p>No accepted swaps yet. Once someone accepts your request (or you accept theirs), they will appear here.</p>
+            </div>
+        {% endif %}
+    </div>
 </div>
+
+
+
 
 <!-- Add Skill Modal -->
 <div id="addSkillModal" class="modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000;">
@@ -331,5 +381,72 @@ window.onclick = function(event) {
         closeAddSkillModal();
     }
 }
+
+// Highlight stars on hover
+document.querySelectorAll('.star-rating').forEach(container => {
+    const stars = container.querySelectorAll('.fa-star');
+
+    let selectedRating = 0;
+
+    stars.forEach((star, index) => {
+        // Hover effect
+        star.addEventListener('mouseenter', () => {
+            stars.forEach((s, i) => s.style.color = i <= index ? '#ffc107' : '#ccc');
+        });
+
+        // Persist on click
+        star.addEventListener('click', () => {
+            selectedRating = index + 1;
+            container.setAttribute('data-selected', selectedRating);
+            stars.forEach((s, i) => s.style.color = i < selectedRating ? '#ffc107' : '#ccc');
+        });
+    });
+
+    // Restore selected on leave
+    container.addEventListener('mouseleave', () => {
+        const saved = parseInt(container.getAttribute('data-selected')) || 0;
+        stars.forEach((s, i) => s.style.color = i < saved ? '#ffc107' : '#ccc');
+    });
+});
+
+// Handle submit rating
+document.querySelectorAll('.submit-rating').forEach(button => {
+    button.addEventListener('click', async () => {
+        const container = button.closest('div');
+        const starDiv = container.querySelector('.star-rating');
+        const feedback = container.querySelector('.rating-feedback').value;
+        const selected = parseInt(starDiv.getAttribute('data-selected')) || 0;
+
+
+        if (selected === 0) return showAlert('Please select a rating.', 'error');
+
+        const swapId = starDiv.dataset.swapId;
+        const ratedId = starDiv.dataset.ratedId;
+
+        try {
+            const res = await fetch('/api/ratings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    swap_id: swapId,
+                    rated_id: ratedId,
+                    rating: selected,
+                    feedback: feedback
+                })
+            });
+
+            const data = await res.json();
+            if (res.ok) {
+                showAlert(data.message, 'success');
+                button.disabled = true;
+                button.innerText = 'Rated';
+            } else {
+                showAlert(data.error, 'error');
+            }
+        } catch (err) {
+            showAlert('Failed to submit rating', 'error');
+        }
+    });
+});
 </script>
 {% endblock %}

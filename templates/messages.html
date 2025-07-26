@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block title %}Messages - SkillSwap{% endblock %}
+
+{% block content %}
+<div class="messages-container" style="display: flex; height: 80vh; border: 1px solid #ccc; border-radius: 10px; overflow: hidden;">
+    <!-- Sidebar with matched users -->
+    <div class="user-list" style="width: 250px; background: #f8f9fa; border-right: 1px solid #ccc; overflow-y: auto;">
+        <h3 style="padding: 1rem; margin: 0; background: #e9ecef; border-bottom: 1px solid #ccc;">Matched Users</h3>
+        <ul id="matchedUsers" style="list-style: none; margin: 0; padding: 0;">
+            {% for user in matches %}
+                <li onclick="loadMessages({{ user.id }}, '{{ user.full_name }}')" style="padding: 0.75rem 1rem; cursor: pointer; border-bottom: 1px solid #ddd;">
+                    {{ user.full_name }}
+                </li>
+            {% endfor %}
+        </ul>
+    </div>
+
+    <!-- Chat area -->
+    <div class="chat-area" style="flex: 1; display: flex; flex-direction: column;">
+        <div id="chatHeader" style="padding: 1rem; border-bottom: 1px solid #ccc; background: #f1f1f1;">
+            <h4 id="chatWith" style="margin: 0;">Select a user to chat</h4>
+        </div>
+        <div id="chatBox" style="flex: 1; padding: 1rem; overflow-y: auto; background: #fff;">
+            <!-- Messages will be loaded here -->
+        </div>
+        <form id="messageForm" style="display: flex; padding: 1rem; border-top: 1px solid #ccc;" onsubmit="sendMessage(event)">
+            <input type="text" id="messageInput" placeholder="Type a message..." style="flex: 1; padding: 0.5rem;" required>
+            <button type="submit" class="btn btn-primary" style="margin-left: 0.5rem;">Send</button>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentReceiverId = null;
+
+function loadMessages(userId, fullName) {
+    currentReceiverId = userId;
+    document.getElementById('chatWith').innerText = 'Chatting with ' + fullName;
+    document.getElementById('chatBox').innerHTML = '<p>Loading...</p>';
+
+    fetch(`/api/messages/${userId}`)
+        .then(res => res.json())
+        .then(messages => {
+            const chatBox = document.getElementById('chatBox');
+            chatBox.innerHTML = '';
+
+            messages.forEach(msg => {
+                const msgDiv = document.createElement('div');
+                msgDiv.style.marginBottom = '0.5rem';
+                msgDiv.style.padding = '0.5rem';
+                msgDiv.style.borderRadius = '8px';
+                msgDiv.style.maxWidth = '60%';
+                msgDiv.style.clear = 'both';
+
+                const isSender = msg.sender_id === {{ session['user_id'] }};
+                msgDiv.style.backgroundColor = isSender ? '#d1ecf1' : '#e2e3e5';
+                msgDiv.style.float = isSender ? 'right' : 'left';
+
+                msgDiv.innerText = msg.message;
+                chatBox.appendChild(msgDiv);
+            });
+
+            chatBox.scrollTop = chatBox.scrollHeight;
+        })
+        .catch(err => {
+            console.error(err);
+            alert('Failed to load messages.');
+        });
+}
+
+function sendMessage(event) {
+    event.preventDefault();
+    const input = document.getElementById('messageInput');
+    const message = input.value.trim();
+
+    if (!message || !currentReceiverId) return;
+
+    fetch('/api/messages/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            receiver_id: currentReceiverId,
+            message: message
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.error) {
+            alert(data.error);
+        } else {
+            input.value = '';
+            loadMessages(currentReceiverId, document.getElementById('chatWith').innerText.replace('Chatting with ', ''));
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        alert('Failed to send message.');
+    });
+}
+</script>
+{% endblock %}

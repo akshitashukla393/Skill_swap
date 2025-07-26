@@ -8,13 +8,28 @@
         <div style="display: flex; align-items: center; gap: 2rem;">
             <div class="profile-photo" style="width: 120px; height: 120px; border-radius: 50%; background: linear-gradient(45deg, #667eea, #764ba2); display: flex; align-items: center; justify-content: center; color: white; font-size: 3rem;">
                 {% if user.profile_photo %}
-                    <img src="{{ url_for('static', filename='uploads/' + user.profile_photo) }}" alt="Profile" style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover;">
+                    <img src="{{ url_for('uploaded_file', filename=user.profile_photo) }}" alt="Profile" style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover;" id="profile-image">
                 {% else %}
                     <i class="fas fa-user"></i>
                 {% endif %}
             </div>
             <div style="flex: 1;">
                 <h1 style="color: #333; margin-bottom: 0.5rem;">{{ user.full_name }}</h1>
+                {% if user_stats.total_reviews > 0 %}
+                    <div style="margin-bottom: 0.5rem;">
+                        {% for i in range(1, 6) %}
+                            <i class="fas fa-star" style="color: {{ 'gold' if i <= user_stats.avg_rating|round(0, 'floor') else '#ccc' }};"></i>
+                        {% endfor %}
+                        <span style="color: #666; font-size: 0.9rem;">
+                            {{ user_stats.avg_rating }}/5 ({{ user_stats.total_reviews }} reviews)
+                        </span>
+                    </div>
+                {% else %}
+                    <p style="color: #999; margin-bottom: 0.5rem;">
+                        <i class="fas fa-star"></i> Not yet rated
+                    </p>
+                {% endif %}
+
                 <p style="color: #666; margin-bottom: 0.5rem;">@{{ user.username }}</p>
                 {% if user.location %}
                 <p style="color: #666; margin-bottom: 0.5rem;">
@@ -91,13 +106,13 @@
                 </div>
                 
                 <div class="stat-card" style="text-align: center; padding: 1.5rem; background: linear-gradient(45deg, #17a2b8, #6f42c1); border-radius: 10px; color: white;">
-                    <h3 style="margin: 0 0 0.5rem 0; font-size: 2rem;">{{ user_stats.completed_swaps or 0 }}</h3>
-                    <p style="margin: 0; opacity: 0.9;">Completed Swaps</p>
+                    <h3 style="margin: 0 0 0.5rem 0; font-size: 2rem;">{{ user_stats.total_requests or 0 }}</h3>
+                    <p style="margin: 0; opacity: 0.9;">Total Requests</p>
                 </div>
                 
                 <div class="stat-card" style="text-align: center; padding: 1.5rem; background: linear-gradient(45deg, #ffc107, #fd7e14); border-radius: 10px; color: white;">
-                    <h3 style="margin: 0 0 0.5rem 0; font-size: 2rem;">{{ user_stats.avg_rating or 0 }}/5</h3>
-                    <p style="margin: 0; opacity: 0.9;">Average Rating</p>
+                    <h3 style="margin: 0 0 0.5rem 0; font-size: 2rem;">{{ user_stats.total_reviews or 0 }}</h3>
+                    <p style="margin: 0; opacity: 0.9;">Total Reviews</p>
                 </div>
             </div>
         </div>
@@ -111,26 +126,37 @@
         
         <h2 style="color: #333; margin-bottom: 1rem;">Edit Profile</h2>
         
-        <form id="editProfileForm" enctype="multipart/form-data">
-            <div class="form-group">
-                <label for="profile_photo">Profile Photo</label>
-                <input type="file" id="profile_photo" name="profile_photo" accept="image/*" onclick="uploadProfilePicture()">
-                <small style="color: #666;">Max size: 5MB. Supported formats: JPG, PNG, GIF</small>
-            </div>
-            
+        <div class="form-group">
+            <label for="profile_picture_input">Profile Photo</label>
+            <input type="file" id="profile_picture_input" accept="image/*" onchange="handleProfilePictureUpload(this)">
+            <small style="color: #666;">Max size: 16MB. Supported formats: JPG, PNG, GIF</small>
+        </div>
+        
+        <form id="editProfileForm">
             <div class="form-group">
                 <label for="full_name">Full Name *</label>
                 <input type="text" id="full_name" name="full_name" value="{{ user.full_name }}" required>
             </div>
             
             <div class="form-group">
-                <label for="email">Email *</label>
-                <input type="email" id="email" name="email" value="{{ user.email }}" required>
+                <label for="location">Location</label>
+                <input type="text" id="location" name="location" value="{{ user.location or '' }}" placeholder="e.g., New York, NY">
             </div>
             
             <div class="form-group">
-                <label for="location">Location</label>
-                <input type="text" id="location" name="location" value="{{ user.location or '' }}" placeholder="e.g., New York, NY">
+                <label for="availability">Availability</label>
+                <select id="availability" name="availability">
+                    <option value="available" {{ 'selected' if user.availability == 'available' else '' }}>Available</option>
+                    <option value="busy" {{ 'selected' if user.availability == 'busy' else '' }}>Busy</option>
+                    <option value="away" {{ 'selected' if user.availability == 'away' else '' }}>Away</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="is_public" name="is_public" {{ 'checked' if user.is_public else '' }}>
+                    Make profile public
+                </label>
             </div>
             
             <button type="submit" class="btn" style="width: 100%;">
@@ -231,99 +257,89 @@ input:checked + .slider:before {
 .setting-item:hover {
     background: #f8f9fa;
 }
+
+.alert {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    padding: 15px;
+    border-radius: 5px;
+    z-index: 2000;
+    max-width: 300px;
+}
+
+.alert-success {
+    background: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+}
+
+.alert-error {
+    background: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+}
 </style>
 {% endblock %}
 
 {% block scripts %}
 <script>
+function showAlert(message, type) {
+    const alertDiv = document.createElement('div');
+    alertDiv.className = `alert alert-${type}`;
+    alertDiv.textContent = message;
+    
+    document.body.appendChild(alertDiv);
+    
+    setTimeout(() => {
+        alertDiv.remove();
+    }, 5000);
+}
 
-function uploadProfilePicture() {
-    const fileInput = document.getElementById('profile_picture');
-    const file = fileInput.files[0];
+function handleProfilePictureUpload(input) {
+    const file = input.files[0];
     
     if (!file) {
-        alert('Please select a file first');
         return;
     }
     
     // Check file type
     const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif'];
     if (!allowedTypes.includes(file.type)) {
-        alert('Please select a valid image file (PNG, JPG, JPEG, or GIF)');
+        showAlert('Please select a valid image file (PNG, JPG, JPEG, or GIF)', 'error');
+        input.value = '';
         return;
     }
     
     // Check file size (16MB limit)
     if (file.size > 16 * 1024 * 1024) {
-        alert('File size must be less than 16MB');
+        showAlert('File size must be less than 16MB', 'error');
+        input.value = '';
         return;
     }
     
     const formData = new FormData();
     formData.append('profile_picture', file);
     
-    // Show loading state
-    const uploadButton = document.getElementById('upload-button');
-    const originalText = uploadButton.textContent;
-    uploadButton.textContent = 'Uploading...';
-    uploadButton.disabled = true;
-    
-    fetch('/api/upload_profile_picture', {
+    fetch('/upload_profile_picture', {
         method: 'POST',
-        body: formData // Don't set Content-Type header - let browser set it with boundary
+        body: formData
     })
     .then(response => response.json())
     .then(data => {
         if (data.error) {
-            alert('Error: ' + data.error);
+            showAlert('Error: ' + data.error, 'error');
         } else {
-            alert('Profile picture updated successfully!');
+            showAlert('Profile picture updated successfully!', 'success');
             // Update the profile picture display
-            const profileImg = document.getElementById('profile-image');
-            if (profileImg) {
-                profileImg.src = data.url;
-            }
-            // Clear the file input
-            fileInput.value = '';
+            setTimeout(() => {
+                window.location.reload();
+            }, 1000);
         }
     })
     .catch(error => {
         console.error('Error:', error);
-        alert('An error occurred while uploading the file');
-    })
-    .finally(() => {
-        // Reset button state
-        uploadButton.textContent = originalText;
-        uploadButton.disabled = false;
-    });
-}
-
-function updateProfile() {
-    const formData = {
-        full_name: document.getElementById('full_name').value,
-        location: document.getElementById('location').value,
-        availability: document.getElementById('availability').value,
-        is_public: document.getElementById('is_public').checked ? 1 : 0
-    };
-    
-    fetch('/api/profile', {
-        method: 'PUT',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(formData)
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.error) {
-            alert('Error: ' + data.error);
-        } else {
-            alert('Profile updated successfully!');
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        alert('An error occurred while updating the profile');
+        showAlert('An error occurred while uploading the file', 'error');
     });
 }
 
@@ -345,102 +361,143 @@ function closeChangePasswordModal() {
 }
 
 // Profile visibility toggle
-document.getElementById('profile_visibility').addEventListener('change', async function() {
-    try {
-        const response = await apiRequest('/api/profile/visibility', {
-            method: 'PUT',
-            body: JSON.stringify({ is_public: this.checked })
-        });
-        
-        showAlert(response.message, 'success');
-    } catch (error) {
-        showAlert(error.message, 'error');
+document.getElementById('profile_visibility').addEventListener('change', function() {
+    const formData = {
+        full_name: document.querySelector('#full_name')?.value || '{{ user.full_name }}',
+        location: document.querySelector('#location')?.value || '{{ user.location or "" }}',
+        availability: document.querySelector('#availability')?.value || '{{ user.availability or "available" }}',
+        is_public: this.checked ? 1 : 0
+    };
+    
+    fetch('/update_profile', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(formData)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.error) {
+            showAlert('Error: ' + data.error, 'error');
+            this.checked = !this.checked; // Revert on error
+        } else {
+            showAlert('Profile visibility updated successfully!', 'success');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showAlert('An error occurred while updating profile visibility', 'error');
         this.checked = !this.checked; // Revert on error
-    }
+    });
 });
 
 // Availability status change
-document.getElementById('availability_status').addEventListener('change', async function() {
-    try {
-        const response = await apiRequest('/api/profile/availability', {
-            method: 'PUT',
-            body: JSON.stringify({ availability: this.value })
-        });
-        
-        showAlert(response.message, 'success');
-    } catch (error) {
-        showAlert(error.message, 'error');
-    }
+document.getElementById('availability_status').addEventListener('change', function() {
+    const formData = {
+        full_name: document.querySelector('#full_name')?.value || '{{ user.full_name }}',
+        location: document.querySelector('#location')?.value || '{{ user.location or "" }}',
+        availability: this.value,
+        is_public: document.querySelector('#profile_visibility')?.checked ? 1 : 0
+    };
+    
+    fetch('/update_profile', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(formData)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.error) {
+            showAlert('Error: ' + data.error, 'error');
+        } else {
+            showAlert('Availability status updated successfully!', 'success');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showAlert('An error occurred while updating availability status', 'error');
+    });
 });
 
 // Edit profile form
-document.getElementById('editProfileForm').addEventListener('submit', async function(e) {
+document.getElementById('editProfileForm').addEventListener('submit', function(e) {
     e.preventDefault();
     
-    const button = this.querySelector('button[type="submit"]');
-    const originalText = button.innerHTML;
-    showLoading(button);
+    const formData = {
+        full_name: document.getElementById('full_name').value,
+        location: document.getElementById('location').value,
+        availability: document.getElementById('availability').value,
+        is_public: document.getElementById('is_public').checked ? 1 : 0
+    };
     
-    try {
-        const formData = new FormData(this);
-        
-        const response = await fetch('/api/profile', {
-            method: 'PUT',
-            body: formData
-        });
-        
-        const data = await response.json();
-        
-        if (!response.ok) {
-            throw new Error(data.error || 'Failed to update profile');
+    fetch('/update_profile', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(formData)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.error) {
+            showAlert('Error: ' + data.error, 'error');
+        } else {
+            showAlert('Profile updated successfully!', 'success');
+            closeEditProfileModal();
+            setTimeout(() => {
+                window.location.reload();
+            }, 1000);
         }
-        
-        showAlert(data.message, 'success');
-        closeEditProfileModal();
-        
-        setTimeout(() => {
-            window.location.reload();
-        }, 1000);
-        
-    } catch (error) {
-        showAlert(error.message, 'error');
-        hideLoading(button, originalText);
-    }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showAlert('An error occurred while updating the profile', 'error');
+    });
 });
 
-// Change password form
-document.getElementById('changePasswordForm').addEventListener('submit', async function(e) {
+// Change password form (Note: This needs a backend route)
+// Change password form - now actually calls the backend
+document.getElementById('changePasswordForm').addEventListener('submit', function(e) {
     e.preventDefault();
-    
+
+    const currentPassword = document.getElementById('current_password').value;
     const newPassword = document.getElementById('new_password').value;
     const confirmPassword = document.getElementById('confirm_password').value;
-    
+
     if (newPassword !== confirmPassword) {
         showAlert('New passwords do not match', 'error');
         return;
     }
-    
-    const button = this.querySelector('button[type="submit"]');
-    const originalText = button.innerHTML;
-    showLoading(button);
-    
-    try {
-        const formData = new FormData(this);
-        const data = Object.fromEntries(formData);
-        
-        const response = await apiRequest('/api/profile/password', {
-            method: 'PUT',
-            body: JSON.stringify(data)
-        });
-        
-        showAlert(response.message, 'success');
-        closeChangePasswordModal();
-        
-    } catch (error) {
-        showAlert(error.message, 'error');
-        hideLoading(button, originalText);
-    }
+
+    fetch('/change_password', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            current_password: currentPassword,
+            new_password: newPassword
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.error) {
+            showAlert('Error: ' + data.error, 'error');
+        } else {
+            showAlert('Password changed successfully!', 'success');
+            closeChangePasswordModal();
+            document.getElementById('changePasswordForm').reset();
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showAlert('An error occurred while changing password', 'error');
+    });
 });
+
 
 // Close modals when clicking outside
 window.onclick = function(event) {

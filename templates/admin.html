@@ -124,9 +124,10 @@
                             </span>
                         </td>
                         <td>
-                            <button class="btn btn-sm" onclick="viewSwapDetails({{ swap.id }})">
-                                <i class="fas fa-eye"></i> View
+                            <button class="btn btn-sm" onclick="cancelSwap({{ swap.id }})">
+                                <i class="fas fa-ban"></i> Cancel
                             </button>
+
                         </td>
                     </tr>
                     {% endfor %}
@@ -407,6 +408,24 @@
 
 {% block scripts %}
 <script>
+
+
+async function cancelSwap(swapId) {
+    if (!confirm('Cancel this swap?')) return;
+    try {
+        const response = await fetch(`/api/admin/swaps/${swapId}/cancel`, { method: 'PUT' });
+        const data = await response.json();
+        if (response.ok) {
+            showAlert('Swap cancelled.', 'success');
+            location.reload();
+        } else {
+            showAlert(data.error || 'Failed to cancel swap.', 'error');
+        }
+    } catch {
+        showAlert('Server error while cancelling swap.', 'error');
+    }
+}
+
 // Modal functions
 function showUserManagement() {
     document.getElementById('userManagementModal').style.display = 'block';

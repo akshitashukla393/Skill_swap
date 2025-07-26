@@ -94,6 +94,18 @@ def init_db():
             FOREIGN KEY (rated_id) REFERENCES users (id)
         )
     ''')
+    # Messages table
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sender_id INTEGER,
+        receiver_id INTEGER,
+        message TEXT NOT NULL,
+        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (sender_id) REFERENCES users (id),
+        FOREIGN KEY (receiver_id) REFERENCES users (id)
+    )
+''')
     
     # Admin messages table
     cursor.execute('''
@@ -237,10 +249,60 @@ def dashboard():
         WHERE sr.requester_id = ?
     ''', (session['user_id'],))
     sent_requests = cursor.fetchall()
+
+    # Get accepted swaps involving the user
+    cursor.execute('''
+        SELECT sr.*, 
+            u1.full_name AS requester_name, 
+            u2.full_name AS provider_name, 
+            s1.skill_name AS offered_skill,
+            s2.skill_name AS requested_skill
+        FROM swap_requests sr
+        JOIN users u1 ON sr.requester_id = u1.id
+        JOIN users u2 ON sr.provider_id = u2.id
+        JOIN skills s1 ON sr.offered_skill_id = s1.id
+        JOIN skills s2 ON sr.requested_skill_id = s2.id
+        WHERE sr.status = 'accepted'
+        AND (sr.requester_id = ? OR sr.provider_id = ?)
+    ''', (session['user_id'], session['user_id']))
+    accepted_swaps = cursor.fetchall()
+
     
     conn.close()
+    return render_template('dashboard.html', 
+    skills=skills, 
+    pending_requests=pending_requests, 
+    sent_requests=sent_requests,
+    accepted_swaps=accepted_swaps  # ✅ Add this
+    )
+
+
+@app.route('/change_password', methods=['POST'])
+def change_password():
+    if 'user_id' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
     
-    return render_template('dashboard.html', skills=skills, pending_requests=pending_requests, sent_requests=sent_requests)
+    data = request.get_json()
+    current_password = data.get('current_password')
+    new_password = data.get('new_password')
+    
+    if not current_password or not new_password:
+        return jsonify({'error': 'Current and new passwords are required'}), 400
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT password_hash FROM users WHERE id = ?', (session['user_id'],))
+    user = cursor.fetchone()
+    
+    if not user or not check_password_hash(user['password_hash'], current_password):
+        return jsonify({'error': 'Current password is incorrect'}), 400
+    
+    new_password_hash = generate_password_hash(new_password)
+    cursor.execute('UPDATE users SET password_hash = ? WHERE id = ?', (new_password_hash, session['user_id']))
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'message': 'Password changed successfully'}), 200
 
 @app.route('/profile')
 def profile():
@@ -256,10 +318,11 @@ def profile():
     # Get user stats
     cursor.execute('''
         SELECT 
-            (SELECT COUNT(*) FROM skills WHERE user_id = ?) as total_skills,
-            (SELECT COUNT(*) FROM swap_requests WHERE requester_id = ?) as total_requests,
-            (SELECT COUNT(*) FROM ratings WHERE rated_id = ?) as total_reviews
-    ''', (user['id'], user['id'], user['id']))
+            (SELECT COUNT(*) FROM skills WHERE user_id = ?) AS total_skills,
+            (SELECT COUNT(*) FROM swap_requests WHERE requester_id = ?) AS total_requests,
+            (SELECT COUNT(*) FROM ratings WHERE rated_id = ?) AS total_reviews,
+            (SELECT ROUND(AVG(rating), 1) FROM ratings WHERE rated_id = ?) AS avg_rating
+    ''', (user['id'], user['id'], user['id'], user['id']))
     user_stats = cursor.fetchone()
 
     conn.close()
@@ -362,7 +425,7 @@ def api_profile():
         
         if user:
             user_dict = dict(user)
-            # Remove sensitive data
+            
             user_dict.pop('password_hash', None)
             return jsonify(user_dict)
         else:
@@ -426,7 +489,7 @@ def browse():
     conn = get_db()
     cursor = conn.cursor()
 
-    # Get users with their offered skills
+    
     query = '''
         SELECT u.id, u.full_name, u.location, u.profile_photo
         FROM users u
@@ -518,7 +581,7 @@ def admin_dashboard():
     conn = get_db()
     cursor = conn.cursor()
     
-    # Get stats
+    
     cursor.execute('SELECT COUNT(*) as total_users FROM users WHERE is_admin = 0')
     total_users = cursor.fetchone()['total_users']
     
@@ -671,7 +734,7 @@ def api_swap_request_action(request_id):
         conn.close()
         return jsonify({'message': 'Request deleted successfully'})
     
-    # PUT request - accept/reject
+    
     data = request.get_json()
     action = data.get('action')
     
@@ -722,44 +785,52 @@ def reject_skill(skill_id):
 
 @app.route('/api/admin/users', methods=['GET'])
 def get_all_users():
-    if 'user_id' not in session or not session.get('is_admin'):
-        return jsonify({'error': 'Unauthorized'}), 401
+    if not session.get('is_admin'):
+        return jsonify({'error': 'Unauthorized'}), 403
 
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute('''
-        SELECT id, full_name, username, email, location, is_banned, created_at
-        FROM users 
-        WHERE is_admin = 0
-        ORDER BY created_at DESC
-    ''')
+    cursor.execute('SELECT id, full_name, username, email, location, is_banned FROM users')
     users = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return jsonify(users)
 
+@app.route('/api/admin/swaps/<int:swap_id>/cancel', methods=['PUT'])
+def cancel_swap(swap_id):
+    if not session.get('is_admin'):
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('UPDATE swap_requests SET status = "cancelled" WHERE id = ?', (swap_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({'message': 'Swap cancelled'}), 200
+
+
 @app.route('/api/admin/users/<int:user_id>/ban', methods=['PUT'])
 def ban_user(user_id):
-    if 'user_id' not in session or not session.get('is_admin'):
-        return jsonify({'error': 'Unauthorized'}), 401
+    if not session.get('is_admin'):
+        return jsonify({'error': 'Unauthorized'}), 403
 
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute('UPDATE users SET is_banned = 1 WHERE id = ?', (user_id,))
     conn.commit()
     conn.close()
-    return jsonify({'message': 'User banned successfully'})
+    return jsonify({'message': 'User banned'}), 200
 
 @app.route('/api/admin/users/<int:user_id>/unban', methods=['PUT'])
 def unban_user(user_id):
-    if 'user_id' not in session or not session.get('is_admin'):
-        return jsonify({'error': 'Unauthorized'}), 401
+    if not session.get('is_admin'):
+        return jsonify({'error': 'Unauthorized'}), 403
 
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute('UPDATE users SET is_banned = 0 WHERE id = ?', (user_id,))
     conn.commit()
     conn.close()
-    return jsonify({'message': 'User unbanned successfully'})
+    return jsonify({'message': 'User unbanned'}), 200
 
 @app.route('/api/admin/users/<int:user_id>/delete', methods=['DELETE'])
 def delete_user(user_id):
@@ -800,7 +871,7 @@ def admin_messages():
         conn.close()
         return jsonify({'message': 'System message sent successfully'})
     
-    # GET request
+   
     cursor.execute('SELECT * FROM admin_messages ORDER BY created_at DESC')
     messages = [dict(row) for row in cursor.fetchall()]
     conn.close()
@@ -808,32 +879,27 @@ def admin_messages():
 
 @app.route('/api/admin/export')
 def export_data():
-    if 'user_id' not in session or not session.get('is_admin'):
-        return jsonify({'error': 'Unauthorized'}), 401
+    if not session.get('is_admin'):
+        return jsonify({'error': 'Unauthorized'}), 403
 
+    import csv
+    from io import StringIO
     conn = get_db()
     cursor = conn.cursor()
-    
-    output = io.StringIO()
+    cursor.execute('''
+        SELECT u.username, s.skill_name, s.skill_type, s.description
+        FROM skills s
+        JOIN users u ON u.id = s.user_id
+    ''')
+    rows = cursor.fetchall()
+    output = StringIO()
     writer = csv.writer(output)
-    
-    # Write header
-    writer.writerow(['User ID', 'Full Name', 'Username', 'Email', 'Location', 'Is Banned', 'Created At'])
-    
-    # Write data
-    cursor.execute('SELECT id, full_name, username, email, location, is_banned, created_at FROM users WHERE is_admin = 0')
-    for row in cursor.fetchall():
+    writer.writerow(['Username', 'Skill Name', 'Skill Type', 'Description'])
+    for row in rows:
         writer.writerow(row)
     
-    output.seek(0)
     conn.close()
-    
-    from flask import Response
-    return Response(
-        output.getvalue(),
-        mimetype='text/csv',
-        headers={'Content-Disposition': 'attachment; filename=skillswap_export.csv'}
-    )
+    return Response(output.getvalue(), mimetype='text/csv')
 
 @app.route('/api/admin/stats')
 def admin_stats():
@@ -873,6 +939,113 @@ def admin_stats():
 @app.route('/uploads/<filename>')
 def uploaded_file(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
+
+#messages route to view matches
+@app.route('/messages')
+def messages():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT DISTINCT u.id, u.full_name
+        FROM users u
+        JOIN swap_requests sr ON (
+            (sr.requester_id = ? AND sr.provider_id = u.id)
+            OR
+            (sr.provider_id = ? AND sr.requester_id = u.id)
+        )
+        WHERE sr.status = 'accepted' AND u.id != ?
+    ''', (session['user_id'], session['user_id'], session['user_id']))
+    
+    matches = cursor.fetchall()
+    conn.close()
+
+    return render_template('messages.html', matches=matches)
+
+@app.route('/api/messages/<int:user_id>')
+def get_messages(user_id):
+    if 'user_id' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT * FROM messages
+        WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)
+        ORDER BY timestamp ASC
+    ''', (session['user_id'], user_id, user_id, session['user_id']))
+    
+    messages = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return jsonify(messages)
+
+@app.route('/api/messages/send', methods=['POST'])
+def send_message():
+    if 'user_id' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    data = request.get_json()
+    receiver_id = data.get('receiver_id')
+    message = data.get('message')
+
+    if not receiver_id or not message:
+        return jsonify({'error': 'Missing fields'}), 400
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO messages (sender_id, receiver_id, message)
+        VALUES (?, ?, ?)
+    ''', (session['user_id'], receiver_id, message))
+    conn.commit()
+    conn.close()
+
+    return jsonify({'message': 'Message sent'}), 201
+
+
+@app.route('/api/ratings', methods=['POST'])
+def submit_rating():
+    if 'user_id' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    data = request.get_json()
+    swap_id = data.get('swap_id')
+    rated_id = data.get('rated_id')
+    rating = data.get('rating')
+    feedback = data.get('feedback', '')
+
+    if not swap_id or not rated_id or not rating:
+        return jsonify({'error': 'Missing required fields'}), 400
+
+    if not (1 <= int(rating) <= 5):
+        return jsonify({'error': 'Rating must be between 1 and 5'}), 400
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    # Check if this rating already exists
+    cursor.execute('''
+        SELECT id FROM ratings
+        WHERE swap_id = ? AND rater_id = ?
+    ''', (swap_id, session['user_id']))
+
+    if cursor.fetchone():
+        return jsonify({'error': 'You have already rated this swap'}), 400
+
+    cursor.execute('''
+        INSERT INTO ratings (swap_id, rater_id, rated_id, rating, feedback)
+        VALUES (?, ?, ?, ?, ?)
+    ''', (swap_id, session['user_id'], rated_id, rating, feedback))
+
+    conn.commit()
+    conn.close()
+
+    return jsonify({'message': 'Rating submitted successfully'}), 201
+
 
 if __name__ == '__main__':
     if not os.path.exists('static/uploads'):
